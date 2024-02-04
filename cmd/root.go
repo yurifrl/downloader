@@ -1,10 +1,9 @@
 /*
 Copyright © 2024 NAME HERE <EMAIL ADDRESS>
 */
-package cmd
+package main
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"log"
@@ -16,38 +15,104 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/k0kubun/pp/v3"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v2"
+	"github.com/spf13/viper"
 )
+
+// Global variable to keep track of download statuses
+var downloadStatuses []string
+var statusLock sync.Mutex
+
+// Execute adds all child commands to the root command and sets flags appropriately.
+// This is called by main.main(). It only needs to happen once to the rootCmd.
+func Execute() {
+	pp.Println("Begining...")
+
+	cobra.OnInitialize(initConfig)
+
+	rootCmd.Flags().StringP("download-dir", "d", "downloads", "Download directory")
+	rootCmd.Flags().IntP("parallel", "p", 10, "Number of parallel tasks")
+	rootCmd.Flags().StringP("config-file", "c", "config.yaml", "Config file path")
+
+	if err := rootCmd.Execute(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func (c Config) Load() {
+	// TODO: set default
+	// 	RootPath:        ".",
+	// 	Parallel:        10,
+	// 	DownloadsTmpDir: "downloads_tmp",
+
+	// Initialize downloadedMap from Downloaded
+	c.downloadedMap = make(map[string]bool)
+	for _, url := range c.Downloaded {
+		c.downloadedMap[url] = true
+	}
+
+	pp.Println("======")
+	pp.Println(c)
+	pp.Println("======")
+}
+
+func initConfig() {
+	configFile := viper.GetString("config-file")
+	viper.SetConfigFile(configFile)
+
+	// Search for config in the working directory and in the home directory
+	viper.AddConfigPath(".")
+	viper.AddConfigPath(filepath.Join(os.Getenv("HOME"), ".config"))
+	viper.SetConfigName("config")
+
+	viper.AutomaticEnv()
+
+	if err := viper.ReadInConfig(); err != nil {
+		fmt.Printf("Using default configuration from %s\n", configFile)
+	}
+}
 
 var rootCmd = &cobra.Command{
 	Use:   "downloader [directory]",
 	Short: "Downloads files from a YAML configuration",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		downloadDir := args[0]
-		configFile := filepath.Join(downloadDir, "config.yaml")
+		// Set default values if config file is not provided
+		c := Config{}
 
-		var config Config
-		readConfig(configFile, &config)
-		config.DownloadedURLsFile = "download_list.txt"
+		configFile, _ := cmd.Flags().GetString("config-file")
 
-		semaphore := make(chan struct{}, config.Parallel)
+		if configFile != "" {
+			viper.SetConfigFile(configFile)
+			if err := viper.ReadInConfig(); err != nil {
+				log.Fatalf("Error reading config file: %s", err)
+			}
+			if err := viper.Unmarshal(&c); err != nil {
+				log.Fatalf("Error unmarshalling config: %s", err)
+			}
+		}
+
+		c.Load()
+
+		panic("ONO")
+
+		semaphore := make(chan struct{}, c.Parallel)
 		var wg sync.WaitGroup
 
 		// Initialize downloadStatuses with expected size for better concurrency management
-		downloadStatuses = make([]string, len(config.Download)*config.Parallel) // Adjust size estimation as needed
-		downloadIndex := 0                                                      // Keep track of the index for assigning to downloads
+		downloadStatuses = make([]string, len(c.Download)*c.Parallel) // Adjust size estimation as needed
+		downloadIndex := 0                                            // Keep track of the index for assigning to downloads
 
-		for folder, urls := range config.Download {
-			fullPath := filepath.Join(downloadDir, folder)
+		for folder, urls := range c.Download {
+			fullPath := filepath.Join(c.DownloadsTmpDir, folder)
 			if err := os.MkdirAll(fullPath, os.ModePerm); err != nil {
 				fmt.Printf("Failed to create directory %s: %v\n", fullPath, err)
 				continue
 			}
 
 			for _, url := range urls {
-				if config.DownloadFinished(url) {
+				if c.DownloadFinished(url) {
 					fmt.Printf("URL already downloaded: %s\n", url)
 					continue
 				}
@@ -58,7 +123,7 @@ var rootCmd = &cobra.Command{
 				go func(url, fullPath string, index int) {
 					defer wg.Done()                // Signal this download is complete
 					defer func() { <-semaphore }() // Release the slot
-					if err := downloadFile(url, config.DownloadsTmpDir, index); err != nil {
+					if err := downloadFile(url, c.DownloadsTmpDir, index); err != nil {
 						fmt.Printf("Failed to download %s: %v\n", url, err)
 					}
 					// TODO unpack
@@ -75,31 +140,6 @@ var rootCmd = &cobra.Command{
 		fmt.Println("All downloads and unpacking completed.")
 	},
 }
-
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
-func Execute() {
-	err := rootCmd.Execute()
-	if err != nil {
-		os.Exit(1)
-	}
-}
-
-func init() {
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.downloader.yaml)")
-
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-}
-
-// Global variable to keep track of download statuses
-var downloadStatuses []string
-var statusLock sync.Mutex
 
 // ExtractFileName extracts and decodes the file name from the URL.
 func extractFileName(urlStr string) string {
@@ -186,17 +226,6 @@ func downloadFile(urlStr, folderPath string, index int) (err error) {
 	return nil
 }
 
-func (pr *ProgressReader) Read(p []byte) (int, error) {
-	n, err := pr.Reader.Read(p)
-	*pr.Current += int64(n)
-
-	// Update progress
-	percentage := float64(*pr.Current) / float64(pr.Total) * 100
-	updateDownloadStatus(pr.Index, fmt.Sprintf("Downloading (%s)... %.2f%% complete", pr.FileName, percentage))
-
-	return n, err
-}
-
 func updateDownloadStatus(index int, status string) {
 	statusLock.Lock()
 	defer statusLock.Unlock()
@@ -214,67 +243,4 @@ func updateDownloadStatus(index int, status string) {
 	for _, s := range downloadStatuses {
 		fmt.Println(s)
 	}
-}
-
-func main() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-}
-
-type ProgressReader struct {
-	Index    int
-	FileName string
-	io.Reader
-	Total   int64
-	Current *int64
-}
-
-func readConfig(filePath string, config *Config) {
-	file, err := os.ReadFile(filePath)
-	if err != nil {
-		fmt.Printf("Failed to read config file: %v\n", err)
-		os.Exit(1)
-	}
-	if err := yaml.Unmarshal(file, config); err != nil {
-		fmt.Printf("Failed to parse config file: %v\n", err)
-		os.Exit(1)
-	}
-}
-
-// / Struct to match the new YAML file structure
-type Config struct {
-	Download           map[string][]string `yaml:"download"`
-	Parallel           int                 `yaml:"parallel"`
-	DownloadedURLsFile string              `yaml:"downloaded_file"`
-	DownloadsTmpDir    string              `yaml:"downloades_tmp_dir"`
-}
-
-func (c *Config) DownloadFinished(url string) bool {
-	file, err := os.Open(c.DownloadedURLsFile)
-	if err != nil {
-		// Handle error (file might not exist which is okay on first run)
-		return false
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		if scanner.Text() == url {
-			return true
-		}
-	}
-	return false
-}
-
-func (c *Config) AppendURLToFile(url string) error {
-	file, err := os.OpenFile(c.DownloadedURLsFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	_, err = file.WriteString(url + "\n")
-	return err
 }
