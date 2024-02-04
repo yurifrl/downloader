@@ -1,0 +1,9 @@
+parallel: 10
+download:
+  wii-u:
+    - https://archive.org/download/wii-u-super-nintendo-snes-nus/Super%20Mario%20World%20%5B0005000010108F00%5D%5BUSA%5D.7z
+    - https://archive.org/download/wii-u-super-nintendo-snes-nus/The%20Legend%20of%20Zelda%20A%20Link%20to%20the%20Past%20%5B0005000010109800%5D%5BUSA%5D.7z
+  test1:
+    - https://archive.org/download/wii-u-super-nintendo-snes-nus/Super%20Metroid%20%5B000500001010A600%5D%5BUSA%5D.7z
+  test2:
+    - https://archive.org/download/wii-u-super-nintendo-snes-nus/Super%20Punch-Out%21%21%20%5B0005000010159100%5D%5BUSA%5D.7z
