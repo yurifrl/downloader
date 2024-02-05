@@ -4,7 +4,6 @@ Copyright © 2024 NAME HERE <EMAIL ADDRESS>
 package main
 
 import (
-	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -23,6 +22,7 @@ import (
 // Global variable to keep track of download statuses
 var downloadStatuses []string
 var statusLock sync.Mutex
+var config Config
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
@@ -31,45 +31,16 @@ func Execute() {
 
 	cobra.OnInitialize(initConfig)
 
-	rootCmd.Flags().StringP("download-dir", "d", "downloads", "Download directory")
-	rootCmd.Flags().IntP("parallel", "p", 10, "Number of parallel tasks")
-	rootCmd.Flags().StringP("config-file", "c", "config.yaml", "Config file path")
+	rootCmd.PersistentFlags().StringP("download-dir", "d", "downloads", "Download directory")
+	rootCmd.PersistentFlags().StringP("config", "c", "config.yaml", "config file (default is $HOME/.config.yaml)")
+	rootCmd.PersistentFlags().IntP("parallel", "p", 3, "parallel parameter")
+
+	viper.BindPFlag("parallel", rootCmd.PersistentFlags().Lookup("parallel"))
+	viper.BindPFlag("download_dir", rootCmd.PersistentFlags().Lookup("download-dir"))
+	viper.BindPFlag("config", rootCmd.PersistentFlags().Lookup("config"))
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)
-	}
-}
-
-func (c Config) Load() {
-	// TODO: set default
-	// 	RootPath:        ".",
-	// 	Parallel:        10,
-	// 	DownloadsTmpDir: "downloads_tmp",
-
-	// Initialize downloadedMap from Downloaded
-	c.downloadedMap = make(map[string]bool)
-	for _, url := range c.Downloaded {
-		c.downloadedMap[url] = true
-	}
-
-	pp.Println("======")
-	pp.Println(c)
-	pp.Println("======")
-}
-
-func initConfig() {
-	configFile := viper.GetString("config-file")
-	viper.SetConfigFile(configFile)
-
-	// Search for config in the working directory and in the home directory
-	viper.AddConfigPath(".")
-	viper.AddConfigPath(filepath.Join(os.Getenv("HOME"), ".config"))
-	viper.SetConfigName("config")
-
-	viper.AutomaticEnv()
-
-	if err := viper.ReadInConfig(); err != nil {
-		fmt.Printf("Using default configuration from %s\n", configFile)
 	}
 }
 
@@ -78,42 +49,32 @@ var rootCmd = &cobra.Command{
 	Short: "Downloads files from a YAML configuration",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		// Set default values if config file is not provided
-		c := Config{}
+		// pp.Println("Config ===>", config)
 
-		configFile, _ := cmd.Flags().GetString("config-file")
-
-		if configFile != "" {
-			viper.SetConfigFile(configFile)
-			if err := viper.ReadInConfig(); err != nil {
-				log.Fatalf("Error reading config file: %s", err)
-			}
-			if err := viper.Unmarshal(&c); err != nil {
-				log.Fatalf("Error unmarshalling config: %s", err)
-			}
+		if err := config.DownloadAppend("foo"); err != nil {
+			log.Fatal(err)
 		}
 
-		c.Load()
-
-		panic("ONO")
-
-		semaphore := make(chan struct{}, c.Parallel)
+		semaphore := make(chan struct{}, config.Parallel)
 		var wg sync.WaitGroup
 
 		// Initialize downloadStatuses with expected size for better concurrency management
-		downloadStatuses = make([]string, len(c.Download)*c.Parallel) // Adjust size estimation as needed
-		downloadIndex := 0                                            // Keep track of the index for assigning to downloads
+		downloadStatuses = make([]string, len(config.Download)*config.Parallel) // Adjust size estimation as needed
+		downloadIndex := 0                                                      // Keep track of the index for assigning to downloads
+		// Map to track directories that need to be created
+		missingDirs := make(map[string]struct{})
 
-		for folder, urls := range c.Download {
-			fullPath := filepath.Join(c.DownloadsTmpDir, folder)
-			if err := os.MkdirAll(fullPath, os.ModePerm); err != nil {
-				fmt.Printf("Failed to create directory %s: %v\n", fullPath, err)
+		for folder, urls := range config.Download {
+			fullPath := filepath.Join(config.DownloadsDir, folder)
+			if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+				// Instead of logging, add to map
+				missingDirs[fullPath] = struct{}{}
 				continue
 			}
 
 			for _, url := range urls {
-				if c.DownloadFinished(url) {
-					fmt.Printf("URL already downloaded: %s\n", url)
+				if config.DownloadFinished(url) {
+					log.Printf("URL already downloaded: %s\n", url)
 					continue
 				}
 
@@ -123,21 +84,29 @@ var rootCmd = &cobra.Command{
 				go func(url, fullPath string, index int) {
 					defer wg.Done()                // Signal this download is complete
 					defer func() { <-semaphore }() // Release the slot
-					if err := downloadFile(url, c.DownloadsTmpDir, index); err != nil {
-						fmt.Printf("Failed to download %s: %v\n", url, err)
+					if err := downloadFile(url, fullPath, index); err != nil {
+						log.Printf("Failed to download %s: %v\n", url, err)
 					}
+					config.DownloadAppend(url)
 					// TODO unpack
 				}(url, fullPath, downloadIndex)
 
 				downloadIndex++ // Increment the index for the next download
-
-				// TODO ENABLE THIS
-				// config.DownloadAppend(url)
 			}
 		}
 
+		// If there are missing directories, print the mkdir command
+		if len(missingDirs) > 0 {
+			var dirs []string
+			for dir := range missingDirs {
+				dirs = append(dirs, strconv.Quote(dir))
+			}
+			log.Printf("The following folders do not exist and will be created: \n%s\n", strings.Join(dirs, " "))
+			log.Printf("mkdir -p %s\n", strings.Join(dirs, " "))
+		}
+
 		wg.Wait()
-		fmt.Println("All downloads and unpacking completed.")
+		log.Println("End.")
 	},
 }
 
@@ -239,8 +208,8 @@ func updateDownloadStatus(index int, status string) {
 	downloadStatuses[index] = status
 
 	// Clear the screen and redraw statuses
-	fmt.Print("\033[H\033[2J") // Clear the screen
+	log.Print("\033[H\033[2J") // Clear the screen
 	for _, s := range downloadStatuses {
-		fmt.Println(s)
+		log.Println(s)
 	}
 }

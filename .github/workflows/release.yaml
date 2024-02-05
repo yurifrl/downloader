@@ -1,0 +1,43 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, windows, darwin]
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-go@v2
+        with:
+          go-version: "^1.18"
+      - name: Build
+        run: |
+          env GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -v -o downloader-${{ matrix.goos }}-${{ matrix.goarch }}
+      - uses: actions/upload-artifact@v2
+        with:
+          name: downloader-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: downloader-${{ matrix.goos }}-${{ matrix.goarch }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v2
+      - uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            downloader-linux-amd64
+            downloader-linux-arm64
+            downloader-windows-amd64
+            downloader-windows-arm64
+            downloader-darwin-amd64
+            downloader-darwin-arm64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
