@@ -13,14 +13,14 @@ jobs:
         goos: [linux, windows, darwin]
         goarch: [amd64, arm64]
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-go@v2
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v4
         with:
-          go-version: "^1.18"
+          go-version: "^1.21"
       - name: Build
         run: |
-          env GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -v -o downloader-${{ matrix.goos }}-${{ matrix.goarch }}
-      - uses: actions/upload-artifact@v2
+          env GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -v -o downloader-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd
+      - uses: actions/upload-artifact@v4
         with:
           name: downloader-${{ matrix.goos }}-${{ matrix.goarch }}
           path: downloader-${{ matrix.goos }}-${{ matrix.goarch }}
