@@ -8,15 +8,6 @@ The Downloader tool is a command-line application written in Go, designed to sim
 
 To install the Downloader tool, download the latest version from the [Releases](https://github.com/yurifrl/downloader/releases/latest) page. Choose the appropriate binary for your operating system and architecture.
 
-### Quick Links for Latest Release
-
-- [Linux amd64](https://github.com/yurifrl/downloader/releases/latest/download/downloader-linux-amd64)
-- [Linux arm64](https://github.com/yurifrl/downloader/releases/latest/download/downloader-linux-arm64)
-- [Windows amd64](https://github.com/yurifrl/downloader/releases/latest/download/downloader-windows-amd64)
-- [Windows arm64](https://github.com/yurifrl/downloader/releases/latest/download/downloader-windows-arm64)
-- [macOS amd64](https://github.com/yurifrl/downloader/releases/latest/download/downloader-darwin-amd64)
-- [macOS arm64](https://github.com/yurifrl/downloader/releases/latest/download/downloader-darwin-arm64)
-
 After downloading, you may need to make the binary executable (for Linux and macOS):
 
 ```bash
