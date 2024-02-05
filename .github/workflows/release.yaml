@@ -19,6 +19,7 @@ jobs:
         # goarch: ["386", amd64, arm64]
         goos: [linux]
         goarch: [amd64]
+        #
         # exclude:
         #   - goarch: "386"
         #     goos: darwin
