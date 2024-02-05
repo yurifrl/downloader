@@ -1,17 +1,14 @@
 #!/usr/bin/env bash
 
-#!/bin/bash
-
 # Navigate to the top-level directory of the Git repository
 cd "$(git rev-parse --show-toplevel)"
 
-# Step 1: Add all changes to git
+# Commit any bs
 git add .
-
-# Step 2: Commit the changes with a message
 git commit -m ":rocket:"
+git push origin main
 
-# Step 3: Generate a new tag based on the latest tag, incrementing the patch version
+# Generate a new tag based on the latest tag, incrementing the patch version
 # Fetch all tags
 git fetch --tags
 
