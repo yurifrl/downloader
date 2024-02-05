@@ -14,16 +14,13 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # goos: [linux, windows, darwin]
-        # goarch: ["386", amd64, arm64]
-        goos: [linux]
-        goarch: [amd64]
-        #
-        # exclude:
-        #   - goarch: "386"
-        #     goos: darwin
-        #   - goarch: arm64
-        #     goos: windows
+        goos: [linux, windows, darwin]
+        goarch: ["386", amd64, arm64]
+        exclude:
+          - goarch: "386"
+            goos: darwin
+          - goarch: arm64
+            goos: windows
     steps:
       - uses: actions/checkout@v4
       - uses: wangyoucao577/go-release-action@v1.46
@@ -31,5 +28,5 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           goos: ${{ matrix.goos }}
           goarch: ${{ matrix.goarch }}
-          project_path: "./cmd"
-          binary_name: "downloader"
+          project_path: ./cmd
+          binary_name: downloader
